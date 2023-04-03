@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-env
+  namespace: default
+data:
+  coins: "1000000000000000utia"
+  chainid: "test"
+  keyring_backend: "test"
+  validator_key_name: "validator"
+  validator_stake: "5000000000utia"
+  evm_address: "0x966e6f22781EF6a6A82BBB4DB3df8E225DfD9488"
+  celestia_app_home: "/home/celestia"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2023-04-03T10:34:40Z"
+  labels:
+    app: testsequencerrelayer
+  name: test_sequencer_relayer
+spec:
+  securityContext:
+    runAsUser: 10001
+  initContainers:
+    - command:
+      - /scripts/init-celestia-appd-podman.sh
+      name: init-celestia-app
+      image: ghcr.io/celestiaorg/celestia-app:latest
+      volumeMounts:
+        - mountPath: /scripts/
+          name: scripts-volume
+        - mountPath: /home/celestia
+          name: home-volume
+      envFrom:
+        - configMapRef:
+            name: test-env
+      env:
+        - name: home_dir
+          valueFrom:
+            configMapKeyRef:
+              name: test-env
+              key: celestia_app_home
+  containers:
+  - command:
+    - /scripts/start-celestia-appd-podman.sh
+    image: ghcr.io/celestiaorg/celestia-app:latest
+    name: start-celestia-app
+    envFrom:
+      - configMapRef:
+          name: test-env
+    env:
+      - name: home_dir
+        valueFrom:
+          configMapKeyRef:
+            name: test-env
+            key: celestia_app_home
+    volumeMounts:
+    - mountPath: /scripts/
+      name: scripts-volume
+    - mountPath: /home/celestia
+      name: home-volume
+  - command:
+    - /scripts/get-genesis-hash.sh
+    name: get-genesis-hash
+    image: ghcr.io/tomwright/dasel:alpine
+    env:
+      - name: home_dir
+        valueFrom:
+          configMapKeyRef:
+            name: test-env
+            key: celestia_app_home
+    volumeMounts:
+      - mountPath: /scripts/
+        name: scripts-volume
+      - mountPath: /home/celestia
+        name: home-volume
+  - command:
+    - /scripts/start-bridge-podman.sh
+    name: start-celestia-bridge
+    image: ghcr.io/celestiaorg/celestia-node:latest
+    volumeMounts:
+      - mountPath: /scripts/
+        name: scripts-volume
+      - mountPath: /home/celestia
+        name: home-volume
+    envFrom:
+      - configMapRef:
+          name: test-env
+    env:
+      - name: home_dir
+        valueFrom:
+          configMapKeyRef:
+            name: test-env
+            key: celestia_app_home
+  hostname: test_sequencer_relayer
+  restartPolicy: OnFailure
+  volumes:
+  - hostPath:
+      path: /home/janis/dev/astria/sequencer-relayer/docker/
+      readOnly: true
+      type: Directory
+    name: scripts-volume
+  - emptyDir: {}
+    name: home-volume
+      
+    
+status: {}
