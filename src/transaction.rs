@@ -28,7 +28,7 @@ mod test {
 
     #[tokio::test]
     async fn test_txs_to_data_hash() {
-        let cosmos_endpoint = "http://localhost:1317".to_string();
+        let cosmos_endpoint = "http://localhost:1318".to_string();
         let client = SequencerClient::new(cosmos_endpoint).unwrap();
         let resp = client.get_latest_block().await.unwrap();
         let data_hash = txs_to_data_hash(&resp.block.data.txs);

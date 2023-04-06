@@ -201,7 +201,7 @@ mod test {
 
     #[tokio::test]
     async fn test_header_verify_hashes() {
-        let cosmos_endpoint = "http://localhost:1317".to_string();
+        let cosmos_endpoint = "http://localhost:1318".to_string();
         let client = SequencerClient::new(cosmos_endpoint).unwrap();
         let resp = client.get_latest_block().await.unwrap();
         let sequencer_block = SequencerBlock::from_cosmos_block(resp.block).unwrap();

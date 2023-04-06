@@ -77,7 +77,7 @@ mod test {
 
     #[tokio::test]
     async fn test_get_latest_block() {
-        let cosmos_endpoint = "http://localhost:1317".to_string();
+        let cosmos_endpoint = "http://localhost:1318".to_string();
         let client = SequencerClient::new(cosmos_endpoint).unwrap();
         let resp = client.get_latest_block().await.unwrap();
         println!("LatestBlockResponse: {:?}", resp);
@@ -85,7 +85,7 @@ mod test {
 
     #[tokio::test]
     async fn test_get_block() {
-        let cosmos_endpoint = "http://localhost:1317".to_string();
+        let cosmos_endpoint = "http://localhost:1318".to_string();
         let client = SequencerClient::new(cosmos_endpoint).unwrap();
         let resp = client.get_latest_block().await.unwrap();
         let height: u64 = resp.block.header.height.parse().unwrap();

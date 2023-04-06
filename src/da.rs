@@ -105,7 +105,7 @@ impl CelestiaClient {
     /// specifically within submit_block.
     pub fn new(endpoint: String) -> eyre::Result<Self> {
         let cnc =
-            CelestiaNodeClient::new(endpoint).wrap_err("failed creating celestia node client")?;
+            CelestiaNodeClient::builder().base_url(endpoint).build().wrap_err("failed creating celestia node client")?;
         Ok(CelestiaClient { client: cnc })
     }
 
@@ -397,6 +397,7 @@ mod tests {
             rollup_txs: HashMap::new(),
         };
 
+        println!("submitting block");
         let submit_block_resp = client.submit_block(block, &keypair).await.unwrap();
         let height = submit_block_resp
             .namespace_to_block_num
@@ -406,6 +407,7 @@ mod tests {
         // generate new, different key
         let keypair = Keypair::generate(&mut OsRng);
         let public_key = PublicKey::from_bytes(&keypair.public.to_bytes()).unwrap();
+        println!("getting blocks");
         let resp = client.get_blocks(*height, Some(&public_key)).await.unwrap();
         assert!(resp.is_empty());
     }

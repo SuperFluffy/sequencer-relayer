@@ -1,16 +1,34 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: test-env
+  name: celestia-env
   namespace: default
 data:
   coins: "1000000000000000utia"
+  validator_stake: "5000000000utia"
   chainid: "test"
   keyring_backend: "test"
   validator_key_name: "validator"
-  validator_stake: "5000000000utia"
+  # evm address corresponds to private key:
+  # da6ed55cb2894ac2c9c10209c09de8e8b9d109b910338d5bf3d747a7e1fc9eb9
   evm_address: "0x966e6f22781EF6a6A82BBB4DB3df8E225DfD9488"
-  celestia_app_home: "/home/celestia"
+  home_dir: "/home/celestia"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metro-env
+  namespace: default
+data:
+  coins: "1000000000000000utick"
+  validator_stake: "5000000000utick"
+  chainid: "test"
+  keyring_backend: "test"
+  validator_key_name: "validator"
+  # evm address corresponds to private key:
+  # da6ed55cb2894ac2c9c10209c09de8e8b9d109b910338d5bf3d747a7e1fc9eb9
+  evm_address: "0x966e6f22781EF6a6A82BBB4DB3df8E225DfD9488"
+  home_dir: "/home/metro"
 ---
 apiVersion: v1
 kind: Pod
@@ -20,79 +38,103 @@ metadata:
     app: testsequencerrelayer
   name: test_sequencer_relayer
 spec:
-  securityContext:
-    runAsUser: 10001
+  # securityContext:
+  #   runAsUser: 10001
   initContainers:
     - command:
       - /scripts/init-celestia-appd-podman.sh
       name: init-celestia-app
-      image: ghcr.io/celestiaorg/celestia-app:latest
+      image: "ghcr.io/celestiaorg/celestia-app:v0.11.0"
       volumeMounts:
         - mountPath: /scripts/
           name: scripts-volume
         - mountPath: /home/celestia
-          name: home-volume
+          name: celestia-home-volume
       envFrom:
         - configMapRef:
-            name: test-env
+            name: celestia-env
+    - command:
+      - /scripts/init-bridge-podman.sh
+      name: init-bridge
+      image: "ghcr.io/superfluffy/sequencer-relayer:celestia-node-test-v0.6.1"
+      volumeMounts:
+        - mountPath: /scripts/
+          name: scripts-volume
+        - mountPath: /home/celestia
+          name: celestia-home-volume
       env:
         - name: home_dir
           valueFrom:
             configMapKeyRef:
-              name: test-env
-              key: celestia_app_home
+              name: celestia-env
+              key: home_dir
+    - command:
+      - /scripts/init-metro-podman.sh
+      name: init-metro
+      image: "ghcr.io/astriaorg/metro:latest"
+      volumeMounts:
+        - mountPath: /scripts/
+          name: scripts-volume
+        - mountPath: /home/metro
+          name: metro-home-volume
+      envFrom:
+        - configMapRef:
+            name: metro-env
+    - command:
+      - /scripts/configure-metro-podman.sh
+      name: configure-metro
+      image: ghcr.io/tomwright/dasel:alpine
+      env:
+        - name: home_dir
+          valueFrom:
+            configMapKeyRef:
+              name: metro-env
+              key: home_dir
+      volumeMounts:
+        - mountPath: /scripts/
+          name: scripts-volume
+        - mountPath: /home/metro
+          name: metro-home-volume
   containers:
-  - command:
-    - /scripts/start-celestia-appd-podman.sh
-    image: ghcr.io/celestiaorg/celestia-app:latest
-    name: start-celestia-app
-    envFrom:
-      - configMapRef:
-          name: test-env
-    env:
-      - name: home_dir
-        valueFrom:
-          configMapKeyRef:
-            name: test-env
-            key: celestia_app_home
-    volumeMounts:
-    - mountPath: /scripts/
-      name: scripts-volume
-    - mountPath: /home/celestia
-      name: home-volume
-  - command:
-    - /scripts/get-genesis-hash.sh
-    name: get-genesis-hash
-    image: ghcr.io/tomwright/dasel:alpine
-    env:
-      - name: home_dir
-        valueFrom:
-          configMapKeyRef:
-            name: test-env
-            key: celestia_app_home
-    volumeMounts:
+    - name: celestia-app
+      command: ["/scripts/start-celestia-appd-podman.sh"]
+      image: "ghcr.io/celestiaorg/celestia-app:v0.11.0"
+      envFrom:
+        - configMapRef:
+            name: celestia-env
+      volumeMounts:
       - mountPath: /scripts/
         name: scripts-volume
       - mountPath: /home/celestia
-        name: home-volume
-  - command:
-    - /scripts/start-bridge-podman.sh
-    name: start-celestia-bridge
-    image: ghcr.io/celestiaorg/celestia-node:latest
-    volumeMounts:
-      - mountPath: /scripts/
-        name: scripts-volume
-      - mountPath: /home/celestia
-        name: home-volume
-    envFrom:
-      - configMapRef:
-          name: test-env
-    env:
-      - name: home_dir
-        valueFrom:
-          configMapKeyRef:
-            name: test-env
-            key: celestia_app_home
+        name: celestia-home-volume
+    - name: celestia-bridge
+      command:
+      - /scripts/start-bridge-podman.sh
+      # image: "ghcr.io/celestiaorg/celestia-node:0.6.1"
+      image: "localhost/celestia-node:test"
+      volumeMounts:
+        - mountPath: /scripts/
+          name: scripts-volume
+        - mountPath: /home/celestia
+          name: celestia-home-volume
+      envFrom:
+        - configMapRef:
+            name: celestia-env
+      ports:
+        - containerPort: 26659
+    - name: metro-sequencer
+      command: ["/scripts/start-metro-podman.sh"]
+      image: "ghcr.io/astriaorg/metro:latest"
+      ports:
+        - containerPort: 1318
+      volumeMounts:
+        - mountPath: /scripts/
+          name: scripts-volume
+        - mountPath: /home/metro
+          name: metro-home-volume
+      envFrom:
+        - configMapRef:
+            name: metro-env
   hostname: test_sequencer_relayer
   restartPolicy: OnFailure
   volumes:
@@ -102,7 +144,8 @@ spec:
       type: Directory
     name: scripts-volume
   - emptyDir: {}
-    name: home-volume
-      
+    name: celestia-home-volume
+  - emptyDir: {}
+    name: metro-home-volume
     
 status: {}
