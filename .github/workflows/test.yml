@@ -29,6 +29,7 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - run: podman --version
       - name: Start Celestia core app and bridge node
         run: podman play kube docker/test_sequencer_relayer --replace
       - name: Install protoc
