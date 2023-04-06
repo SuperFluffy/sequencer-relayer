@@ -14,15 +14,6 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Clone Metro
-        uses: actions/checkout@v2
-        with:
-          repository: histolabs/metro
-          path: './metro'
-      - name: Build Metro
-        run: |
-          cd metro && make install
-          bash scripts/single-node.sh &
       - uses: actions/checkout@v2
       - name: Install stable
         run: rustup toolchain install stable
@@ -39,7 +30,7 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       - name: Start Celestia core app and bridge node
-        run: docker-compose -f docker/test-docker-compose.yml up -d bridge0
+        run: podman play kube docker/test_sequencer_relayer --replace
       - name: Install protoc
         run: sudo apt-get install protobuf-compiler
       - name: Build
@@ -52,8 +43,8 @@ jobs:
         with:
           command: test
           args: -- --nocapture --color always --test-threads=1
-      - name: Clean up Docker containers used for testing
-        run: ./docker/cleanup-docker.sh
+      - name: Stop podman pod
+        run: podman pod stop --all
 
   fmt:
     name: fmt
