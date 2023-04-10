@@ -29,6 +29,8 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: install podman 4
+        run: sudo bash $GITHUB_WORKSPACE/.github/workflows/install_podman.sh
       - run: podman --version
       - name: Start Celestia core app and bridge node
         run: podman play kube docker/test_sequencer_relayer --replace
