@@ -33,7 +33,7 @@ jobs:
         run: sudo bash $GITHUB_WORKSPACE/.github/workflows/install_podman.sh
       - run: podman --version
       - name: Start Celestia core app and bridge node
-        run: podman play kube docker/test_sequencer_relayer --replace
+        run: podman play kube docker/test_sequencer_relayer.yaml --replace
       - name: Install protoc
         run: sudo apt-get install protobuf-compiler
       - name: Build
