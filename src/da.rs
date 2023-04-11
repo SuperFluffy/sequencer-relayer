@@ -104,8 +104,10 @@ impl CelestiaClient {
     /// the keypair is used to sign the data that is submitted to Celestia,
     /// specifically within submit_block.
     pub fn new(endpoint: String) -> eyre::Result<Self> {
-        let cnc =
-            CelestiaNodeClient::builder().base_url(endpoint).build().wrap_err("failed creating celestia node client")?;
+        let cnc = CelestiaNodeClient::builder()
+            .base_url(endpoint)
+            .build()
+            .wrap_err("failed creating celestia node client")?;
         Ok(CelestiaClient { client: cnc })
     }
 
