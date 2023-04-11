@@ -110,8 +110,7 @@ spec:
     - name: celestia-bridge
       command:
       - /scripts/start-bridge-podman.sh
-      # image: "ghcr.io/celestiaorg/celestia-node:0.6.1"
-      image: "localhost/celestia-node:test"
+      image: "ghcr.io/superfluffy/sequencer-relayer:celestia-node-test-v0.6.1"
       volumeMounts:
         - mountPath: /scripts/
           name: scripts-volume
