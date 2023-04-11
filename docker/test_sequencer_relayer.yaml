@@ -136,7 +136,7 @@ spec:
   restartPolicy: OnFailure
   volumes:
   - hostPath:
-      path: /home/janis/dev/astria/sequencer-relayer/docker/
+      path: /home/runner/work/sequencer-relayer/sequencer-relayer/docker/
       readOnly: true
       type: Directory
     name: scripts-volume
