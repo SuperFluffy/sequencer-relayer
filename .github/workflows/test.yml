@@ -31,9 +31,14 @@ jobs:
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       - name: install podman 4
         run: sudo bash $GITHUB_WORKSPACE/.github/workflows/install_podman.sh
-      - run: podman --version
-      - name: Start Celestia core app and bridge node
+      - name: start podman
+        run: |
+          systemctl restart --user podman
+          systemctl restart --user podman.socket
+      - name: start test pod to download all images
         run: podman play kube docker/test_sequencer_relayer.yaml --replace
+      - name: stop test pod
+        run: podman pod stop test_sequencer_relayer
       - name: Install protoc
         run: sudo apt-get install protobuf-compiler
       - name: Build
