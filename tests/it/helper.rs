@@ -1,21 +1,27 @@
 use std::{
-    collections::HashMap,
-    fs::File,
-    path::{Path, PathBuf},
-    process::Stdio,
+    path::PathBuf,
     sync::atomic::{AtomicU16, Ordering},
     time::Duration,
 };
 
+use askama::Template;
 use podman_api::{Id, Podman};
-use serde::Deserialize as _;
-use serde_yaml::Value;
-use tokio::io::AsyncWriteExt as _;
 use uuid::Uuid;
 
 static HOST_PORT: AtomicU16 = AtomicU16::new(1024);
 
-pub fn init_runtime() -> Podman {
+#[derive(Template)]
+#[template(path = "sequencer_relayer_stack.yaml.jinja2")]
+struct SequencerRelayerStack<'a> {
+    pod_name: &'a str,
+    celestia_home_volume: &'a str,
+    metro_home_volume: &'a str,
+    scripts_host_volume: &'a str,
+    bridge_host_port: u16,
+    sequencer_host_port: u16,
+}
+
+pub fn init_environment() -> Podman {
     let uid = users::get_effective_uid();
     let podman_dir = PathBuf::from(format!("/run/user/{uid}/podman"));
     if podman_dir.exists() {
@@ -25,174 +31,54 @@ pub fn init_runtime() -> Podman {
     }
 }
 
-pub struct Ports {
-    pub sequencer: u16,
-    pub bridge: u16,
+pub struct StackInfo {
+    pub pod_name: String,
+    pub bridge_host_port: u16,
+    pub sequencer_host_port: u16,
 }
-pub async fn start_pod_cli(pod_def: &PodDefinition) -> Ports {
-    let yaml = pod_def.to_string();
-    let sequencer = HOST_PORT.fetch_add(1, Ordering::Relaxed);
-    let bridge = HOST_PORT.fetch_add(1, Ordering::Relaxed);
-    let mut cmd = tokio::process::Command::new("podman")
-        .arg("play")
-        .arg("kube")
-        .arg(format!("--publish={sequencer}:1318"))
-        .arg(format!("--publish={bridge}:26659"))
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    cmd.stdin
-        .as_mut()
-        .unwrap()
-        .write_all(yaml.as_bytes())
+
+impl StackInfo {
+    pub fn make_cosmos_endpoint(&self) -> String {
+        format!(
+            "http://127.0.0.1:{}",
+            self.sequencer_host_port,
+        )
+    }
+}
+
+pub async fn init_stack(podman: &Podman) -> StackInfo {
+    let id = Uuid::new_v4().simple();
+    let pod_name = format!("sequencer_relayer_stack-{id}");
+    let celestia_home_volume = format!("celestia-home-volume-{id}");
+    let metro_home_volume = format!("metro-home-volume-{id}");
+    let bridge_host_port = HOST_PORT.fetch_add(1, Ordering::Relaxed);
+    let sequencer_host_port = HOST_PORT.fetch_add(1, Ordering::Relaxed);
+
+    let scripts_host_volume = format!("{}/containers/", env!("CARGO_MANIFEST_DIR"));
+
+    let stack = SequencerRelayerStack {
+        pod_name: &pod_name,
+        celestia_home_volume: &celestia_home_volume,
+        metro_home_volume: &metro_home_volume,
+        scripts_host_volume: &scripts_host_volume,
+        bridge_host_port,
+        sequencer_host_port,
+    };
+
+    let pod_kube_yaml = stack.render().unwrap();
+
+    let _report = podman
+        .play_kubernetes_yaml(&Default::default(), pod_kube_yaml)
         .await
         .unwrap();
-    cmd.stdin.as_mut().unwrap().flush().await.unwrap();
-    cmd.wait_with_output().await.unwrap();
-    Ports { bridge, sequencer }
-}
 
-#[derive(Clone, Debug)]
-pub struct PodDefinition {
-    pub celestia_cfg_map: Value,
-    pub metro_cfg_map: Value,
-    pub pod_def: Value,
-}
-
-impl PodDefinition {
-    pub fn name(&self) -> &str {
-        self.pod_def
-            .get("metadata")
-            .unwrap()
-            .get("name")
-            .unwrap()
-            .as_str()
-            .unwrap()
-    }
-
-    /// get the pod definition from docker/test_sequencer_relayer.yaml
-    pub fn get() -> Self {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let pod_definition_path =
-            Path::new(manifest_dir).join("docker/test_sequencer_relayer.yaml");
-        let f = File::open(pod_definition_path).unwrap();
-        let mut deser = serde_yaml::Deserializer::from_reader(f);
-        let celestia_cfg_map = Value::deserialize(deser.next().unwrap()).unwrap();
-        let metro_cfg_map = Value::deserialize(deser.next().unwrap()).unwrap();
-        let pod_def = Value::deserialize(deser.next().unwrap()).unwrap();
-        Self {
-            celestia_cfg_map,
-            metro_cfg_map,
-            pod_def,
-        }
-    }
-
-    /// like `PodDefinition::get`, but randomize the pod name and emptyDir volume mounts
-    ///
-    /// this avoids name clashes when podman tries to spin up several pods with the same
-    /// name and/or empty dir volumes
-    pub fn get_randomized() -> Self {
-        let mut this = Self::get();
-
-        // rename the pod name
-        let pod_name = this
-            .pod_def
-            .get_mut("metadata")
-            .unwrap()
-            .get_mut("name")
-            .unwrap();
-        let id = Uuid::new_v4().simple();
-        *pod_name = Value::String(format!(
-            "{pod_name}-{id}",
-            pod_name = pod_name.as_str().unwrap()
-        ));
-
-        // rename empty dir volumes so podman does not clash when creating multiple dirs for
-        // different pod instances
-        let empty_dir_volume_names = this
-            .pod_def
-            .get_mut("spec")
-            .unwrap()
-            .get_mut("volumes")
-            .unwrap()
-            .as_sequence_mut()
-            .unwrap()
-            .iter_mut()
-            .filter(|vol| vol.get("emptyDir").is_some())
-            .map(|vol| {
-                let vol_name = vol.get_mut("name").unwrap();
-                let orig_name = vol_name.as_str().unwrap().to_string();
-                let new_name = format!("{vol_name}-{id}", vol_name = vol_name.as_str().unwrap());
-                *vol_name = Value::String(new_name.clone());
-                (orig_name, new_name)
-            })
-            .collect::<HashMap<_, _>>();
-
-        // set the volume mounts to the new names
-        // first for the init containers
-        this.pod_def
-            .get_mut("spec")
-            .unwrap()
-            .get_mut("initContainers")
-            .unwrap()
-            .as_sequence_mut()
-            .unwrap()
-            .iter_mut()
-            .for_each(|container| {
-                container.get_mut("volumeMounts").map(|mounts| {
-                    mounts
-                        .as_sequence_mut()
-                        .unwrap()
-                        .iter_mut()
-                        .for_each(|mount| {
-                            let name = mount.get_mut("name").unwrap();
-                            empty_dir_volume_names
-                                .get(name.as_str().unwrap())
-                                .cloned()
-                                .map(|new_name| *name = Value::String(new_name));
-                        })
-                });
-            });
-        // second for the normal containers
-        this.pod_def
-            .get_mut("spec")
-            .unwrap()
-            .get_mut("containers")
-            .unwrap()
-            .as_sequence_mut()
-            .unwrap()
-            .iter_mut()
-            .for_each(|container| {
-                container.get_mut("volumeMounts").map(|mounts| {
-                    mounts
-                        .as_sequence_mut()
-                        .unwrap()
-                        .iter_mut()
-                        .for_each(|mount| {
-                            let name = mount.get_mut("name").unwrap();
-                            empty_dir_volume_names
-                                .get(name.as_str().unwrap())
-                                .cloned()
-                                .map(|new_name| *name = Value::String(new_name));
-                        })
-                });
-            });
-        this
-    }
-
-    pub fn to_string(&self) -> String {
-        let mut yaml_buf = vec![];
-        serde_yaml::to_writer(&mut yaml_buf, &self.celestia_cfg_map).unwrap();
-        yaml_buf.extend_from_slice(b"\n---\n");
-        serde_yaml::to_writer(&mut yaml_buf, &self.metro_cfg_map).unwrap();
-        yaml_buf.extend_from_slice(b"\n---\n");
-        serde_yaml::to_writer(&mut yaml_buf, &self.pod_def).unwrap();
-        String::from_utf8(yaml_buf).unwrap()
+    StackInfo {
+        pod_name,
+        bridge_host_port,
+        sequencer_host_port,
     }
 }
+
 
 pub async fn cleanup_pod(podman: &Podman, name: &str) {
     let _ = podman.pods().get(name).remove().await;

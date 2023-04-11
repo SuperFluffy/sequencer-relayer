@@ -34,7 +34,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   creationTimestamp: "2023-04-03T10:34:40Z"
-  name: test_sequencer_relayer
+  name: {{ pod_name }}
 spec:
   # securityContext:
   #   runAsUser: 10001
@@ -47,7 +47,7 @@ spec:
         - mountPath: /scripts/
           name: scripts-volume
         - mountPath: /home/celestia
-          name: celestia-home-volume
+          name: {{ celestia_home_volume }}
       envFrom:
         - configMapRef:
             name: celestia-env
@@ -59,7 +59,7 @@ spec:
         - mountPath: /scripts/
           name: scripts-volume
         - mountPath: /home/celestia
-          name: celestia-home-volume
+          name: {{ celestia_home_volume }}
       env:
         - name: home_dir
           valueFrom:
@@ -74,7 +74,7 @@ spec:
         - mountPath: /scripts/
           name: scripts-volume
         - mountPath: /home/metro
-          name: metro-home-volume
+          name: {{ metro_home_volume }}
       envFrom:
         - configMapRef:
             name: metro-env
@@ -92,7 +92,7 @@ spec:
         - mountPath: /scripts/
           name: scripts-volume
         - mountPath: /home/metro
-          name: metro-home-volume
+          name: {{ metro_home_volume }}
   containers:
     - name: celestia-app
       command: ["/scripts/start-celestia-appd-podman.sh"]
@@ -104,7 +104,7 @@ spec:
       - mountPath: /scripts/
         name: scripts-volume
       - mountPath: /home/celestia
-        name: celestia-home-volume
+        name: {{ celestia_home_volume }}
     - name: celestia-bridge
       command:
       - /scripts/start-bridge-podman.sh
@@ -113,22 +113,24 @@ spec:
         - mountPath: /scripts/
           name: scripts-volume
         - mountPath: /home/celestia
-          name: celestia-home-volume
+          name: {{ celestia_home_volume }}
       envFrom:
         - configMapRef:
             name: celestia-env
       ports:
         - containerPort: 26659
+          hostPort: {{ bridge_host_port }}
     - name: metro-sequencer
       command: ["/scripts/start-metro-podman.sh"]
       image: "ghcr.io/astriaorg/metro:latest"
       ports:
         - containerPort: 1318
+          hostPort: {{ sequencer_host_port }}
       volumeMounts:
         - mountPath: /scripts/
           name: scripts-volume
         - mountPath: /home/metro
-          name: metro-home-volume
+          name: {{ metro_home_volume }}
       envFrom:
         - configMapRef:
             name: metro-env
@@ -136,13 +138,13 @@ spec:
   restartPolicy: OnFailure
   volumes:
   - hostPath:
-      path: /home/runner/work/sequencer-relayer/sequencer-relayer/docker/
+      path: {{ scripts_host_volume }}
       readOnly: true
       type: Directory
     name: scripts-volume
   - emptyDir: {}
-    name: celestia-home-volume
+    name: {{ celestia_home_volume }}
   - emptyDir: {}
-    name: metro-home-volume
+    name: {{ metro_home_volume }}
     
 status: {}

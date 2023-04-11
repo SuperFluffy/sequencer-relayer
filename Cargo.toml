@@ -31,8 +31,7 @@ prost-build = "0.11"
 
 [dev-dependencies]
 podman-api = "0.10.0"
-serde = "1.0"
-serde_yaml = "0.9.21"
 users = "0.11.0"
 uuid = { version = "1.3.1", features = ["v4"] }
-tokio = { version = "1.24", features = [ "io-util", "process", "time" ] }
+tokio = { version = "1.24", features = [ "time" ] }
+askama = "0.12.0"
