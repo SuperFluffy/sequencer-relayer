@@ -1,6 +1,6 @@
 use ed25519_dalek::{Keypair, PublicKey};
 use rand::rngs::OsRng;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use sequencer_relayer::{
     base64_string::Base64String,
@@ -8,17 +8,21 @@ use sequencer_relayer::{
     sequencer_block::{get_namespace, IndexedTransaction, SequencerBlock, DEFAULT_NAMESPACE},
 };
 
-use crate::helper::{init_runtime, start_pod_cli, wait_until_ready, PodDefinition, Ports};
+use crate::helper::{init_environment, init_stack, wait_until_ready};
 
 #[tokio::test]
 async fn get_latest_height() {
-    let podman = init_runtime();
-    let pod_def = PodDefinition::get_randomized();
-    let Ports { bridge, .. } = start_pod_cli(&pod_def).await;
-    let id = pod_def.name();
-    wait_until_ready(&podman, id).await;
+    let podman = init_environment();
+    let info = init_stack(&podman).await;
+    wait_until_ready(&podman, &info.pod_name).await;
 
-    let base_url = format!("http://127.0.0.1:1025");
+    // FIXME: use a more reliable check to ensure that data
+    // is available on celestia/the data availability latyer.
+    // Right now we have to explicitly wait a sufficient period
+    // of time. This is flaky.
+    tokio::time::sleep(Duration::from_secs(40)).await;
+
+    let base_url = info.make_bridge_endpoint();
     let client = CelestiaClient::new(base_url).unwrap();
 
     let height = client.get_latest_height().await.unwrap();
@@ -28,16 +32,19 @@ async fn get_latest_height() {
 #[tokio::test]
 async fn get_blocks_public_key_filter() {
     // test that get_blocks only gets blocked signed with a specific key
-    let podman = init_runtime();
-    let pod_def = PodDefinition::get_randomized();
-    let Ports { bridge, .. } = start_pod_cli(&pod_def).await;
-    let id = pod_def.name();
-    wait_until_ready(&podman, id).await;
+    let podman = init_environment();
+    let info = init_stack(&podman).await;
+    wait_until_ready(&podman, &info.pod_name).await;
 
-    let keypair = Keypair::generate(&mut OsRng);
+    // FIXME: use a more reliable check to ensure that data
+    // is available on celestia/the data availability latyer.
+    // Right now we have to explicitly wait a sufficient period
+    // of time. This is flaky.
+    tokio::time::sleep(Duration::from_secs(40)).await;
 
-    let base_url = format!("http://127.0.0.1:{bridge}");
+    let base_url = info.make_bridge_endpoint();
     let client = CelestiaClient::new(base_url).unwrap();
+
     let tx = Base64String(b"noot_was_here".to_vec());
 
     let block_hash = Base64String(vec![99; 32]);
@@ -52,6 +59,7 @@ async fn get_blocks_public_key_filter() {
     };
 
     println!("submitting block");
+    let keypair = Keypair::generate(&mut OsRng);
     let submit_block_resp = client.submit_block(block, &keypair).await.unwrap();
     let height = submit_block_resp
         .namespace_to_block_num
@@ -69,16 +77,17 @@ async fn get_blocks_public_key_filter() {
 #[tokio::test]
 async fn celestia_client() {
     // test submit_block
-    let keypair = Keypair::generate(&mut OsRng);
-    let public_key = PublicKey::from_bytes(&keypair.public.to_bytes()).unwrap();
+    let podman = init_environment();
+    let info = init_stack(&podman).await;
+    wait_until_ready(&podman, &info.pod_name).await;
 
-    let podman = init_runtime();
-    let pod_def = PodDefinition::get_randomized();
-    let Ports { bridge, .. } = start_pod_cli(&pod_def).await;
-    let id = pod_def.name();
-    wait_until_ready(&podman, id).await;
+    // FIXME: use a more reliable check to ensure that data
+    // is available on celestia/the data availability latyer.
+    // Right now we have to explicitly wait a sufficient period
+    // of time. This is flaky.
+    tokio::time::sleep(Duration::from_secs(40)).await;
 
-    let base_url = format!("http://127.0.0.1:{bridge}");
+    let base_url = info.make_bridge_endpoint();
     let client = CelestiaClient::new(base_url).unwrap();
 
     let tx = Base64String(b"noot_was_here".to_vec());
@@ -102,6 +111,9 @@ async fn celestia_client() {
             transaction: secondary_tx.clone(),
         }],
     );
+
+    let keypair = Keypair::generate(&mut OsRng);
+    let public_key = PublicKey::from_bytes(&keypair.public.to_bytes()).unwrap();
 
     let submit_block_resp = client.submit_block(block, &keypair).await.unwrap();
     let height = submit_block_resp

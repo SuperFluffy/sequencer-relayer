@@ -5,10 +5,36 @@ use std::{
 };
 
 use askama::Template;
+use once_cell::sync::Lazy;
 use podman_api::{Id, Podman};
+use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 static HOST_PORT: AtomicU16 = AtomicU16::new(1024);
+
+static STOP_POD_TX: Lazy<UnboundedSender<String>> = Lazy::new(|| {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let _ = std::thread::spawn(move || {
+        let podman = init_environment();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap();
+        let _ = rt.block_on(async move {
+            while let Some(pod_name) = rx.recv().await {
+                let podman = podman.clone();
+                // spawn "fire and forget" tasks so the force removes are sent
+                // to podman immediately and without waiting for a server response.
+                let _ = tokio::spawn(async move {
+                    if let Err(e) = podman.pods().get(&pod_name).remove().await {
+                        eprintln!("received error while removing pod `{pod_name}`: {e:?}");
+                    }
+                });
+            }
+        });
+    });
+    tx
+});
 
 #[derive(Template)]
 #[template(path = "sequencer_relayer_stack.yaml.jinja2")]
@@ -35,14 +61,28 @@ pub struct StackInfo {
     pub pod_name: String,
     pub bridge_host_port: u16,
     pub sequencer_host_port: u16,
+    tx: UnboundedSender<String>,
 }
 
 impl StackInfo {
-    pub fn make_cosmos_endpoint(&self) -> String {
-        format!(
-            "http://127.0.0.1:{}",
-            self.sequencer_host_port,
-        )
+    pub fn make_bridge_endpoint(&self) -> String {
+        format!("http://127.0.0.1:{}", self.bridge_host_port,)
+    }
+
+    pub fn make_sequencer_endpoint(&self) -> String {
+        format!("http://127.0.0.1:{}", self.sequencer_host_port,)
+    }
+}
+
+impl Drop for StackInfo {
+    fn drop(&mut self) {
+        println!("dropping stackinfo");
+        if let Err(e) = self.tx.send(self.pod_name.clone()) {
+            eprintln!(
+                "failed sending pod `{name}` to cleanup task while dropping StackInfo: {e:?}",
+                name = self.pod_name,
+            )
+        }
     }
 }
 
@@ -67,21 +107,22 @@ pub async fn init_stack(podman: &Podman) -> StackInfo {
 
     let pod_kube_yaml = stack.render().unwrap();
 
-    let _report = podman
-        .play_kubernetes_yaml(&Default::default(), pod_kube_yaml)
-        .await
-        .unwrap();
-
-    StackInfo {
+    let stack_info = StackInfo {
         pod_name,
         bridge_host_port,
         sequencer_host_port,
+        tx: Lazy::force(&STOP_POD_TX).clone(),
+    };
+
+    if let Err(e) = podman
+        .play_kubernetes_yaml(&Default::default(), pod_kube_yaml)
+        .await
+    {
+        eprintln!("failed playing YAML failed on podman: {e:?}");
+        panic!("{e:?}");
     }
-}
 
-
-pub async fn cleanup_pod(podman: &Podman, name: &str) {
-    let _ = podman.pods().get(name).remove().await;
+    stack_info
 }
 
 pub async fn wait_until_ready(podman: &Podman, id: impl Into<Id>) {
@@ -93,7 +134,4 @@ pub async fn wait_until_ready(podman: &Podman, id: impl Into<Id>) {
         }
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
-    // we need to sleep to ensure that we have blocks available
-    // FIXME: this needs a more reliable mechanism
-    tokio::time::sleep(Duration::from_secs(20)).await;
 }
