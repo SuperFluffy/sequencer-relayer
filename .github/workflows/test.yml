@@ -51,8 +51,6 @@ jobs:
         with:
           command: test
           args: -- --nocapture --color always --test-threads=1
-      - name: stop all podman pod
-        run: podman pod stop --all
 
   fmt:
     name: fmt

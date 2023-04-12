@@ -76,7 +76,6 @@ impl StackInfo {
 
 impl Drop for StackInfo {
     fn drop(&mut self) {
-        println!("dropping stackinfo");
         if let Err(e) = self.tx.send(self.pod_name.clone()) {
             eprintln!(
                 "failed sending pod `{name}` to cleanup task while dropping StackInfo: {e:?}",
