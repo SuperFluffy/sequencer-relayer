@@ -20,12 +20,12 @@ static STOP_POD_TX: Lazy<UnboundedSender<String>> = Lazy::new(|| {
             .enable_io()
             .build()
             .unwrap();
-        let _ = rt.block_on(async move {
+        rt.block_on(async move {
             while let Some(pod_name) = rx.recv().await {
                 let podman = podman.clone();
                 // spawn "fire and forget" tasks so the force removes are sent
                 // to podman immediately and without waiting for a server response.
-                let _ = tokio::spawn(async move {
+                tokio::spawn(async move {
                     if let Err(e) = podman.pods().get(&pod_name).remove().await {
                         eprintln!("received error while removing pod `{pod_name}`: {e:?}");
                     }
