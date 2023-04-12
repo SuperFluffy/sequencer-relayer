@@ -35,10 +35,10 @@ jobs:
         run: |
           systemctl restart --user podman
           systemctl restart --user podman.socket
-      - name: start test pod to download all images
-        run: podman play kube docker/test_sequencer_relayer.yaml --replace
-      - name: stop test pod
-        run: podman pod stop test_sequencer_relayer
+      - name: start stack to to download all images
+        run: podman kube play --start=false containers/sequencer_relayer_stack.yaml --replace
+      - name: remove stack pod
+        run: podman pod rm --all
       - name: Install protoc
         run: sudo apt-get install protobuf-compiler
       - name: Build
@@ -51,7 +51,7 @@ jobs:
         with:
           command: test
           args: -- --nocapture --color always --test-threads=1
-      - name: Stop podman pod
+      - name: stop all podman pod
         run: podman pod stop --all
 
   fmt:
