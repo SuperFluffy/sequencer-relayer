@@ -54,7 +54,7 @@ spec:
     - command:
       - /scripts/init-bridge-podman.sh
       name: init-bridge
-      image: "ghcr.io/superfluffy/sequencer-relayer:celestia-node-test-v0.6.1"
+      image: "ghcr.io/astriaorg/celestia-node:test-sha-bca1649"
       volumeMounts:
         - mountPath: /scripts/
           name: scripts-volume
@@ -108,7 +108,7 @@ spec:
     - name: celestia-bridge
       command:
       - /scripts/start-bridge-podman.sh
-      image: "ghcr.io/superfluffy/sequencer-relayer:celestia-node-test-v0.6.1"
+      image: "ghcr.io/astriaorg/celestia-node:test-sha-bca1649"
       volumeMounts:
         - mountPath: /scripts/
           name: scripts-volume

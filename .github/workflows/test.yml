@@ -35,8 +35,22 @@ jobs:
         run: |
           systemctl restart --user podman
           systemctl restart --user podman.socket
+      - name: populate sequencer stack template
+        uses: cuchi/jinja2-action@v1.2.0
+        with:
+          template: templates/sequencer_relayer_stack.yaml.jinja2
+          output_file: sequencer_relayer_stack.yaml
+          strict: true
+          variables: |
+            pod_name=sequencer_relayer_stack_pull
+            celestia_home_volume=/home/celestia
+            metro_home_volume=/home/celestia
+            bridge_host_port=26659
+            sequencer_host_port=1318
       - name: start stack to to download all images
-        run: podman kube play --start=false containers/sequencer_relayer_stack.yaml --replace
+        run: |
+          podman kube play --start=false --replace \
+            templates/sequencer_relayer_stack_pull
       - name: remove stack pod
         run: podman pod rm --all
       - name: Install protoc
